@@ -2,7 +2,8 @@
 
 A 3D command center for Resilience Enterprise. You assign work to AI agents, and each agent walks to its building, does the work with Claude, and walks back to the plaza when it's finished.
 
-- **Stack:** Next.js 16 (App Router, TypeScript), React Three Fiber and drei, Tailwind v4, Supabase (Postgres and Realtime), and the Anthropic Claude API.
+- **Stack:** Next.js 16 (App Router, TypeScript), React Three Fiber and drei, Tailwind v4, Supabase (Postgres), and the Anthropic Claude API.
+- **Private by design:** the whole app sits behind one login (`BASIC_AUTH_USER` / `BASIC_AUTH_PASSWORD`). The browser never talks to Supabase directly, and the database is locked to the server's secret key.
 - **No external assets:** every building and character is built from primitive shapes, so it runs out of the box.
 
 ## The team
@@ -35,11 +36,14 @@ All agents are defined in `src/lib/agents.ts`. To add one, append an entry with 
    cp .env.example .env.local
    ```
 2. **Supabase.** Create a project at supabase.com, then open **SQL Editor** and run these two files in order:
-   - `supabase/migrations/0001_resilience_town.sql`: creates the `tasks` table, read-only RLS for the browser, and Realtime.
+   - `supabase/migrations/0001_resilience_town.sql`: creates the `tasks` table.
+   - `supabase/migrations/0002_private_tasks.sql`: locks the table so only the server can read or write it.
    - `supabase/seed.sql`: optional. Adds one demo task per agent. You can also use the **Seed demo tasks** button in the app when the table is empty.
 3. **Fill in `.env.local`:**
    - `ANTHROPIC_API_KEY`: from console.anthropic.com
-   - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`: from Supabase **Project Settings → API**
+   - `SUPABASE_URL`: from the **Connect** button in Supabase
+   - `SUPABASE_SERVICE_ROLE_KEY`: the **secret** key from **Project Settings → API Keys**
+   - `BASIC_AUTH_USER`, `BASIC_AUTH_PASSWORD`: the login you'll use for the app
    - `N8N_WEBHOOK_CRM`, `N8N_WEBHOOK_EMAIL`: your n8n webhook URLs. They're optional, and a call to a webhook that isn't set returns an error to the agent.
 4. **Run:**
    ```bash
@@ -64,7 +68,7 @@ All agents are defined in `src/lib/agents.ts`. To add one, append an entry with 
 ## How it works
 
 ```
-Browser (R3F town + panels) ── reads tasks via anon key + Realtime
+Browser (R3F town + panels) ── polls GET /api/tasks every 2.5s (behind the login)
    │ POST /api/tasks, /api/command, /api/tasks/:id/respond|action
    ▼
 Next.js API (service role) ── inserts/updates tasks
@@ -88,7 +92,7 @@ Agent loop (src/lib/runner.ts)
 
 1. Push this repo to GitHub and import it in Vercel. The framework is detected automatically.
 2. Add every variable from `.env.example` under **Settings → Environment Variables**.
-3. **Set `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD`.** Without them, anyone with the URL can spend your Anthropic credits.
+3. **Set `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD`.** On production the site stays locked until both are set.
 4. **Deployment Protection:** if you turn on Vercel Authentication for production, the app can't call its own `/api/run-task`. Use the Basic Auth above instead, or add a protection bypass.
 5. `/api/run-task` sets `maxDuration = 300`. On the Hobby plan that's the cap, and the runner's hand-off keeps longer tasks going.
 
@@ -100,6 +104,6 @@ src/lib/runner.ts          Claude agent loop, tools, pause/resume, approvals
 src/app/api/*              task create, command, run-task, respond, action, seed
 src/components/Town.tsx    3D town, buildings, walking agents, camera
 src/components/*           top bar, agent panel, task feed, task cards
-supabase/migrations/       schema + Realtime
+supabase/migrations/       schema (0001) + privacy lock (0002)
 supabase/seed.sql          one demo task per agent
 ```

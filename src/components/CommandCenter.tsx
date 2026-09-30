@@ -3,7 +3,6 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { AGENTS, AGENT_BY_ID } from "@/lib/agents";
 import { agentStatus, type AgentStatus } from "@/lib/agentStatus";
-import { supabaseConfigured } from "@/lib/supabase-browser";
 import type { Task, TaskStatus } from "@/lib/types";
 import { useTasks } from "@/lib/useTasks";
 import AgentPanel from "./AgentPanel";
@@ -41,7 +40,6 @@ export default function CommandCenter() {
 
   const byId = useMemo(() => Object.fromEntries(tasks.map((t) => [t.id, t])) as Record<string, Task>, [tasks]);
   const agent = selected ? AGENT_BY_ID[selected] : null;
-  const configured = supabaseConfigured();
 
   return (
     <main className="relative h-dvh w-full overflow-hidden">
@@ -54,14 +52,13 @@ export default function CommandCenter() {
           counts={counts}
           feedOpen={feedOpen}
           onToggleFeed={() => setFeedOpen((o) => !o)}
-          canSeed={configured && !loading && tasks.length === 0}
+          canSeed={!loading && !error && tasks.length === 0}
         />
 
-        {(!configured || error) && (
+        {error && (
           <div className="pointer-events-auto mx-auto mt-3 max-w-xl rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-            {!configured
-              ? "Supabase isn't configured — the town is in view-only mode. Set SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY (see README)."
-              : `Couldn't load tasks: ${error}. Did you run the migration in supabase/migrations?`}
+            Couldn&apos;t load tasks: {error}. Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel, and that
+            both SQL files in supabase/migrations were run.
           </div>
         )}
 

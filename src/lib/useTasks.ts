@@ -1,61 +1,57 @@
 "use client";
-import { useEffect, useState } from "react";
-import { getBrowserSupabase } from "./supabase-browser";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Task } from "./types";
 
-/** All tasks, kept live via Supabase Realtime. */
+const POLL_MS = 2500;
+const listeners = new Set<() => void>();
+
+/** Ask every useTasks instance to refresh now (called after any action). */
+export function refreshTasks() {
+  listeners.forEach((l) => l());
+}
+
+/**
+ * All tasks, kept fresh by polling the password-protected /api/tasks route.
+ * (The database is not readable from the browser, so nothing is exposed
+ * without the app password.)
+ */
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const inFlight = useRef(false);
+
+  const load = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try {
+      const r = await fetch("/api/tasks", { cache: "no-store" });
+      const data = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((data as { error?: string } | null)?.error ?? `HTTP ${r.status}`);
+      setTasks(data as Task[]);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      inFlight.current = false;
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const db = getBrowserSupabase();
-    if (!db) {
-      setLoading(false);
-      return;
-    }
-    let alive = true;
-
-    const load = async () => {
-      const { data, error } = await db
-        .from("tasks")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(500);
-      if (!alive) return;
-      if (error) setError(error.message);
-      else setTasks((data ?? []) as Task[]);
-      setLoading(false);
-    };
-
-    const channel = db
-      .channel("tasks-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, (payload) => {
-        setTasks((prev) => {
-          if (payload.eventType === "DELETE") {
-            const id = (payload.old as { id?: string }).id;
-            return prev.filter((t) => t.id !== id);
-          }
-          const row = payload.new as Task;
-          const i = prev.findIndex((t) => t.id === row.id);
-          if (i === -1) return [row, ...prev];
-          const next = prev.slice();
-          next[i] = row;
-          return next;
-        });
-      })
-      .subscribe((status) => {
-        // Reload on (re)connect so nothing is missed while offline.
-        if (status === "SUBSCRIBED") load();
-      });
-
     load();
+    listeners.add(load);
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, POLL_MS);
+    const onVisible = () => document.visibilityState === "visible" && load();
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
-      alive = false;
-      db.removeChannel(channel);
+      listeners.delete(load);
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, []);
+  }, [load]);
 
   return { tasks, error, loading };
 }
@@ -68,5 +64,6 @@ export async function api<T = unknown>(path: string, body?: unknown): Promise<T>
   });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((data as { error?: string }).error ?? `Request failed (${r.status})`);
+  refreshTasks();
   return data as T;
 }

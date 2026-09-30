@@ -39,8 +39,8 @@ drop trigger if exists tasks_touch on public.tasks;
 create trigger tasks_touch before update on public.tasks
   for each row execute function public.tasks_touch_updated_at();
 
--- RLS: the browser (anon key) may only read. All writes go through the
--- Next.js API routes, which use the service role key.
+-- RLS on. 0002_private_tasks.sql removes this read policy so only the
+-- server (service role key) can access tasks.
 alter table public.tasks enable row level security;
 drop policy if exists "tasks readable" on public.tasks;
 create policy "tasks readable" on public.tasks for select to anon, authenticated using (true);

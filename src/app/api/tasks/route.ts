@@ -16,6 +16,21 @@ const Body = z.object({
   autorun: z.boolean().default(true),
 });
 
+/** All tasks, newest first. The browser polls this instead of reading Supabase directly. */
+export async function GET() {
+  try {
+    const { data, error } = await getServerSupabase()
+      .from("tasks")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) throw new Error(error.message);
+    return NextResponse.json(data, { headers: { "cache-control": "no-store" } });
+  } catch (e) {
+    return fail(e, 503);
+  }
+}
+
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail(parsed.error.issues.map((i) => i.message).join("; "));

@@ -1,11 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-// Optional HTTP Basic Auth for the whole app. Enabled when both
-// BASIC_AUTH_USER and BASIC_AUTH_PASSWORD are set.
+// HTTP Basic Auth for the whole app (pages and API). Required on Vercel
+// production; optional locally.
 export function proxy(req: NextRequest) {
   const user = process.env.BASIC_AUTH_USER;
   const pass = process.env.BASIC_AUTH_PASSWORD;
-  if (!user || !pass) return NextResponse.next();
+  if (!user || !pass) {
+    if (process.env.VERCEL_ENV === "production") {
+      return new NextResponse("Locked: set BASIC_AUTH_USER and BASIC_AUTH_PASSWORD in Vercel, then redeploy.", {
+        status: 503,
+      });
+    }
+    return NextResponse.next();
+  }
 
   const header = req.headers.get("authorization") ?? "";
   const [scheme, encoded] = header.split(" ");
